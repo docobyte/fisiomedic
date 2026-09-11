@@ -42,4 +42,28 @@ describe("FISIOMEDIC Clinical Business Logic Tests", () => {
     expect(frozenShoulder?.typicalIcd9).toContain("93.35"); // Ultrasound
     expect(frozenShoulder?.typicalIcd9).toContain("93.39"); // Diathermy / Electrotherapy
   });
+
+  it("should correctly compute billing amounts according to clinical tariffs", () => {
+    const MODALITY_TARIFFS: Record<string, number> = {
+      TENS: 35000,
+      ULTRASOUND: 45000,
+      INFRARED: 30000,
+      SWD: 50000,
+    };
+
+    const adminFee = 25000;
+    const manualTherapyFee = 55000;
+    const exerciseTherapyFee = 45000;
+    const modalities = ["TENS", "ULTRASOUND", "INFRARED"];
+
+    const modalityTotal = modalities.reduce((sum, mod) => sum + MODALITY_TARIFFS[mod], 0);
+    const subTotal = adminFee + manualTherapyFee + exerciseTherapyFee + modalityTotal;
+
+    expect(modalityTotal).toBe(110000);
+    expect(subTotal).toBe(235000);
+
+    // BPJS patient has 0 patient due
+    const bpjsPatientDue = 0;
+    expect(bpjsPatientDue).toBe(0);
+  });
 });

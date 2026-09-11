@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Activity,
   Users,
@@ -17,10 +17,9 @@ import {
   CheckCircle,
   Clock,
   BookOpen,
-  Sliders,
+  Receipt,
+  RotateCcw,
   Sparkles,
-  ArrowRight,
-  HeartPulse,
 } from "lucide-react";
 import { INITIAL_PATIENTS, INITIAL_SESSIONS, CLINICAL_REFERENCES } from "../data/mockPhysioData";
 import { Patient, TherapySession } from "../types/physio";
@@ -29,6 +28,10 @@ import { VasPainScale } from "../components/VasPainScale";
 import { GoniometryTracker } from "../components/GoniometryTracker";
 import { SatuSehatFhirModal } from "../components/SatuSehatFhirModal";
 import { PrintableResume } from "../components/PrintableResume";
+import { BillingModal } from "../components/BillingModal";
+
+const STORAGE_KEY_PATIENTS = "fisiomedic_patients_v1";
+const STORAGE_KEY_SESSIONS = "fisiomedic_sessions_v1";
 
 export default function FisiomedicDashboard() {
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
@@ -41,7 +44,9 @@ export default function FisiomedicDashboard() {
   // Modals state
   const [showFhirModal, setShowFhirModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showBillingModal, setShowBillingModal] = useState(false);
   const [showNewPatientModal, setShowNewPatientModal] = useState(false);
+  const [showNewSessionModal, setShowNewSessionModal] = useState(false);
 
   // New patient form state
   const [newPatientForm, setNewPatientForm] = useState({
@@ -56,15 +61,56 @@ export default function FisiomedicDashboard() {
     referralSource: "",
   });
 
+  // New session form state
+  const [newSessionForm, setNewSessionForm] = useState({
+    sessionNumber: 5,
+    sessionDate: new Date().toISOString().split("T")[0],
+    therapistName: "Ahmad Fauzi, S.Tr.Ft",
+    therapistSipf: "SIPF.35.03.2024.0042",
+    vasRest: 1,
+    vasMotion: 3,
+    vasPressure: 2,
+    sessionNotes: "Pasien mengeluhkan perbaikan fungsi gerak signifikan pasca modalitas.",
+  });
+
+  // Hydrate from localStorage on client
+  useEffect(() => {
+    try {
+      const savedPatients = localStorage.getItem(STORAGE_KEY_PATIENTS);
+      if (savedPatients) setPatients(JSON.parse(savedPatients));
+
+      const savedSessions = localStorage.getItem(STORAGE_KEY_SESSIONS);
+      if (savedSessions) setSessions(JSON.parse(savedSessions));
+    } catch {
+      // Local storage fallback
+    }
+  }, []);
+
+  // Save to localStorage when changed
+  const savePatients = (updated: Patient[]) => {
+    setPatients(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_PATIENTS, JSON.stringify(updated));
+    } catch {}
+  };
+
+  const saveSessions = (updated: TherapySession[]) => {
+    setSessions(updated);
+    try {
+      localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(updated));
+    } catch {}
+  };
+
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || patients[0];
   const activeSession =
     sessions.find((s) => s.patientId === selectedPatientId) || sessions[0];
 
   // Handler for updating active session fields
   const handleUpdateSession = (updates: Partial<TherapySession>) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === activeSession.id ? { ...s, ...updates } : s))
+    const updated = sessions.map((s) =>
+      s.id === activeSession.id ? { ...s, ...updates } : s
     );
+    saveSessions(updated);
   };
 
   // Filtered patients
@@ -101,9 +147,96 @@ export default function FisiomedicDashboard() {
       registeredAt: new Date().toISOString().split("T")[0],
     };
 
-    setPatients([created, ...patients]);
+    const newSession: TherapySession = {
+      id: `ses-${Date.now()}`,
+      patientId: newId,
+      sessionNumber: 1,
+      totalSessionsTarget: 8,
+      sessionDate: new Date().toISOString().split("T")[0],
+      therapistName: "Ahmad Fauzi, S.Tr.Ft",
+      therapistSipf: "SIPF.35.03.2024.0042",
+      vitalSigns: { bloodPressure: "120/80 mmHg", heartRate: 75, respiratoryRate: 18, temperature: 36.5 },
+      pain: {
+        vasRest: 2,
+        vasMotion: 6,
+        vasPressure: 4,
+        primaryPainRegion: "Keluhan Awal",
+        painCharacteristics: ["Nyeri tekan", "Keterbatasan gerak"],
+        aggravatingFactors: "Aktivitas harian",
+        relievingFactors: "Istirahat",
+      },
+      bodyRegions: ["Bahu Kanan"],
+      goniometry: [],
+      muscleTests: [],
+      specialTests: [],
+      diagnosis: {
+        physioDiagnosis: "Pemeriksaan Asesmen Awal Fisioterapi",
+        icd10Code: "M75.0",
+        icd10Description: "Adhesive capsulitis of shoulder",
+        icd9Procedures: ["93.11", "93.35"],
+        icfImpairment: "b710 Mobilitas sendi terbatas",
+        icfActivity: "d445 Penggunaan lengan terbatas",
+        icfParticipation: "d850 Pekerjaan mandiri",
+        shortTermGoal: "Penurunan nyeri gerak",
+        longTermGoal: "Pemulihan fungsi gerak penuh",
+      },
+      intervention: {
+        modalities: [
+          { id: `mod-${Date.now()}`, type: "ULTRASOUND", dose: "1 MHz 1.2 W/cm2", durationMinutes: 7, targetArea: "Area keluhan" },
+          { id: `mod-${Date.now() + 1}`, type: "TENS", dose: "100 Hz", durationMinutes: 15, targetArea: "Area keluhan" },
+        ],
+        manualTherapy: ["Mobilisasi sendi gentle"],
+        exerciseTherapy: ["Latihan gerak aktif dibantu"],
+        homeProgram: "Latihan peregangan ringan mandiri di rumah",
+        ergonomicAdvice: "Hindari postur membungkuk atau beban berlebih",
+      },
+      notes: "Sesi awal registrasi pasien",
+      satuSehatSynced: true,
+      satuSehatBundleId: `FHIR-ENC-3503-${Date.now()}`,
+      billingStatus: created.insuranceType === "BPJS" ? "KLAIM_BPJS" : "PENDING",
+      totalCost: 175000,
+    };
+
+    savePatients([created, ...patients]);
+    saveSessions([newSession, ...sessions]);
     setSelectedPatientId(newId);
     setShowNewPatientModal(false);
+  };
+
+  // Handle record new therapy session
+  const handleCreateSession = (e: React.FormEvent) => {
+    e.preventDefault();
+    const createdSession: TherapySession = {
+      ...activeSession,
+      id: `ses-${Date.now()}`,
+      sessionNumber: Number(newSessionForm.sessionNumber),
+      sessionDate: newSessionForm.sessionDate,
+      therapistName: newSessionForm.therapistName,
+      therapistSipf: newSessionForm.therapistSipf,
+      pain: {
+        ...activeSession.pain,
+        vasRest: Number(newSessionForm.vasRest),
+        vasMotion: Number(newSessionForm.vasMotion),
+        vasPressure: Number(newSessionForm.vasPressure),
+      },
+      notes: newSessionForm.sessionNotes,
+      satuSehatBundleId: `FHIR-ENC-3503-${Date.now()}`,
+      satuSehatSynced: true,
+      billingStatus: selectedPatient.insuranceType === "BPJS" ? "KLAIM_BPJS" : "PENDING",
+    };
+
+    saveSessions([createdSession, ...sessions]);
+    setShowNewSessionModal(false);
+  };
+
+  const handleResetData = () => {
+    if (confirm("Reset data EMR ke default data awal?")) {
+      localStorage.removeItem(STORAGE_KEY_PATIENTS);
+      localStorage.removeItem(STORAGE_KEY_SESSIONS);
+      setPatients(INITIAL_PATIENTS);
+      setSessions(INITIAL_SESSIONS);
+      setSelectedPatientId("pat-01");
+    }
   };
 
   return (
@@ -125,12 +258,12 @@ export default function FisiomedicDashboard() {
                 </h1>
               </div>
               <p className="text-xs text-slate-400">
-                Sistem Informasi Manajemen Pelayanan Fisioterapi &bull; RSUD / Praktik Mandiri
+                Sistem Informasi Manajemen Pelayanan Fisioterapi &bull; Standar IFI &amp; PMK 24/2022
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {/* Bridging Status Badges */}
             <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-2.5 py-1.5 rounded-lg text-xs">
               <div className="flex items-center gap-1.5 text-emerald-400">
@@ -149,6 +282,14 @@ export default function FisiomedicDashboard() {
               className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> Pasien Baru
+            </button>
+
+            <button
+              onClick={handleResetData}
+              title="Reset ke data simulasi awal"
+              className="p-2 text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 rounded-lg transition-colors"
+            >
+              <RotateCcw className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -173,8 +314,8 @@ export default function FisiomedicDashboard() {
 
           <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
             <div>
-              <span className="text-xs text-slate-400 block font-medium">Sesi Terapi Berjalan</span>
-              <span className="text-2xl font-bold font-mono text-white mt-0.5 block">18</span>
+              <span className="text-xs text-slate-400 block font-medium">Total Sesi Terapi</span>
+              <span className="text-2xl font-bold font-mono text-white mt-0.5 block">{sessions.length}</span>
               <span className="text-[10px] text-cyan-400 flex items-center gap-1 mt-0.5">
                 <Clock className="w-3 h-3" /> Kuota BPJS 8 Sesi / Siklus
               </span>
@@ -193,7 +334,7 @@ export default function FisiomedicDashboard() {
               </span>
             </div>
             <div className="w-10 h-10 rounded-lg bg-emerald-950/60 border border-emerald-800/60 flex items-center justify-center text-emerald-400">
-              <HeartPulse className="w-5 h-5" />
+              <Activity className="w-5 h-5" />
             </div>
           </div>
 
@@ -351,7 +492,18 @@ export default function FisiomedicDashboard() {
                     </div>
 
                     {/* Action buttons inside card */}
-                    <div className="mt-3 pt-2 flex items-center justify-end gap-2">
+                    <div className="mt-3 pt-2 flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPatientId(pat.id);
+                          setShowBillingModal(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] text-amber-300 bg-amber-950/60 border border-amber-800/80 hover:bg-amber-900 px-2 py-1 rounded transition-colors"
+                      >
+                        <Receipt className="w-3 h-3" /> Kasir
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -361,7 +513,7 @@ export default function FisiomedicDashboard() {
                         }}
                         className="inline-flex items-center gap-1 text-[11px] text-teal-400 bg-teal-950/60 border border-teal-800/80 hover:bg-teal-900 px-2 py-1 rounded transition-colors"
                       >
-                        <ShieldCheck className="w-3 h-3" /> SatuSehat FHIR
+                        <ShieldCheck className="w-3 h-3" /> SatuSehat
                       </button>
                       <button
                         type="button"
@@ -372,7 +524,7 @@ export default function FisiomedicDashboard() {
                         }}
                         className="inline-flex items-center gap-1 text-[11px] text-slate-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded transition-colors"
                       >
-                        <Printer className="w-3 h-3" /> Resume Medis
+                        <Printer className="w-3 h-3" /> Resume
                       </button>
                       <button
                         type="button"
@@ -383,7 +535,7 @@ export default function FisiomedicDashboard() {
                         }}
                         className="inline-flex items-center gap-1 text-[11px] text-white bg-teal-600 hover:bg-teal-500 px-2.5 py-1 rounded font-medium transition-colors"
                       >
-                        Periksa SOAP <ChevronRight className="w-3 h-3" />
+                        SOAP <ChevronRight className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
@@ -412,25 +564,40 @@ export default function FisiomedicDashboard() {
                   </div>
                   <p className="text-xs text-slate-400">
                     Faskes Perujuk: {selectedPatient.referralSource || "Mandiri"} &bull; Penjamin:{" "}
-                    <strong className="text-slate-200">{selectedPatient.insuranceType}</strong>
+                    <strong className="text-slate-200">{selectedPatient.insuranceType}</strong> &bull; Sesi ke-
+                    <strong className="text-teal-400">{activeSession.sessionNumber}</strong>
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowNewSessionModal(true)}
+                  className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Rekam Sesi Baru
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBillingModal(true)}
+                  className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-800/80 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Receipt className="w-3.5 h-3.5 text-amber-400" /> Kasir & Billing
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowFhirModal(true)}
                   className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-800/80 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
                 >
-                  <ShieldCheck className="w-4 h-4 text-teal-400" /> SatuSehat FHIR
+                  <ShieldCheck className="w-3.5 h-3.5 text-teal-400" /> SatuSehat FHIR
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowPrintModal(true)}
                   className="inline-flex items-center gap-1.5 bg-teal-700 hover:bg-teal-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition-colors"
                 >
-                  <Printer className="w-4 h-4" /> Cetak Lembar SOAP
+                  <Printer className="w-3.5 h-3.5" /> Cetak SOAP
                 </button>
               </div>
             </div>
@@ -715,6 +882,15 @@ export default function FisiomedicDashboard() {
         />
       )}
 
+      {/* Billing & Kasir Modal */}
+      <BillingModal
+        isOpen={showBillingModal}
+        onClose={() => setShowBillingModal(false)}
+        patient={selectedPatient}
+        session={activeSession}
+        onUpdateBillingStatus={(status) => handleUpdateSession({ billingStatus: status })}
+      />
+
       {/* Register New Patient Modal */}
       {showNewPatientModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -811,6 +987,108 @@ export default function FisiomedicDashboard() {
                   className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow"
                 >
                   Simpan Pasien
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Record New Session Modal */}
+      {showNewSessionModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-5">
+            <h3 className="text-sm font-bold text-white mb-2">Rekam Sesi Terapi Baru</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Pasien: {selectedPatient.fullName} ({selectedPatient.recordNumber})
+            </p>
+            <form onSubmit={handleCreateSession} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">Sesi Ke- *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    required
+                    value={newSessionForm.sessionNumber}
+                    onChange={(e) =>
+                      setNewSessionForm({ ...newSessionForm, sessionNumber: Number(e.target.value) })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:border-teal-500 focus:outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Tanggal Sesi *</label>
+                  <input
+                    type="date"
+                    required
+                    value={newSessionForm.sessionDate}
+                    onChange={(e) => setNewSessionForm({ ...newSessionForm, sessionDate: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:border-teal-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-slate-400 block mb-1">VAS Diam (0-10)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={newSessionForm.vasRest}
+                    onChange={(e) => setNewSessionForm({ ...newSessionForm, vasRest: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">VAS Gerak (0-10)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={newSessionForm.vasMotion}
+                    onChange={(e) => setNewSessionForm({ ...newSessionForm, vasMotion: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">VAS Tekan (0-10)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={newSessionForm.vasPressure}
+                    onChange={(e) => setNewSessionForm({ ...newSessionForm, vasPressure: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Catatan Evaluasi / Kemajuan Klinis</label>
+                <textarea
+                  rows={3}
+                  value={newSessionForm.sessionNotes}
+                  onChange={(e) => setNewSessionForm({ ...newSessionForm, sessionNotes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200 focus:border-teal-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewSessionModal(false)}
+                  className="px-3 py-1.5 text-slate-400 hover:text-white"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-semibold rounded-lg shadow"
+                >
+                  Simpan Sesi
                 </button>
               </div>
             </form>
