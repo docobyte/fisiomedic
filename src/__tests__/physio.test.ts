@@ -1,5 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { CLINICAL_REFERENCES, INITIAL_PATIENTS, INITIAL_SESSIONS } from "../data/mockPhysioData";
+import {
+  patientSchema,
+  newPatientInputSchema,
+  painAssessmentSchema,
+  goniometryRomSchema,
+  clinicalDiagnosisSchema,
+  therapySessionSchema,
+  ICD10_REGEX,
+  NIK_REGEX,
+} from "../schemas/soapValidation";
 
 describe("FISIOMEDIC Clinical Business Logic Tests", () => {
   it("should have valid initial patients and sessions", () => {
@@ -67,3 +77,150 @@ describe("FISIOMEDIC Clinical Business Logic Tests", () => {
     expect(bpjsPatientDue).toBe(0);
   });
 });
+
+describe("FISIOMEDIC Zod Runtime Validation Tests", () => {
+  describe("NIK Validation", () => {
+    it("should accept valid 16-digit numeric NIK", () => {
+      expect(NIK_REGEX.test("3503031205840001")).toBe(true);
+      const res = newPatientInputSchema.safeParse({
+        fullName: "Budi Santoso",
+        nik: "3503031205840001",
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it("should reject NIK with invalid length or non-digits", () => {
+      expect(NIK_REGEX.test("350303120584000")).toBe(false); // 15 digits
+      expect(NIK_REGEX.test("35030312058400019")).toBe(false); // 17 digits
+      expect(NIK_REGEX.test("350303120584000A")).toBe(false); // contains letter
+
+      const shortRes = newPatientInputSchema.safeParse({
+        fullName: "Budi Santoso",
+        nik: "12345",
+      });
+      expect(shortRes.success).toBe(false);
+      if (!shortRes.success) {
+        expect(shortRes.error.issues[0].message).toBe("NIK harus berupa 16 digit angka");
+      }
+    });
+  });
+
+  describe("Goniometry ROM Integrity Validation", () => {
+    it("should pass when activeDegrees <= passiveDegrees", () => {
+      const validRom = {
+        id: "rom-valid",
+        joint: "Shoulder Dextra",
+        movement: "Fleksi",
+        side: "Dextra" as const,
+        activeDegrees: 140,
+        passiveDegrees: 155,
+        normalDegrees: 180,
+        endFeel: "Firm (Normal)" as const,
+      };
+      const res = goniometryRomSchema.safeParse(validRom);
+      expect(res.success).toBe(true);
+    });
+
+    it("should reject when activeDegrees > passiveDegrees (physiologically impossible)", () => {
+      const invalidRom = {
+        id: "rom-invalid",
+        joint: "Shoulder Dextra",
+        movement: "Fleksi",
+        side: "Dextra" as const,
+        activeDegrees: 160,
+        passiveDegrees: 140, // Impossible: active exceeds passive
+        normalDegrees: 180,
+        endFeel: "Firm (Normal)" as const,
+      };
+      const res = goniometryRomSchema.safeParse(invalidRom);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues[0].message).toContain("ROM aktif tidak boleh melebihi ROM pasif");
+      }
+    });
+  });
+
+  describe("SOAP S - Pain Assessment Validation", () => {
+    it("should pass valid VAS values between 0 and 10", () => {
+      const validPain = {
+        vasRest: 0,
+        vasMotion: 5,
+        vasPressure: 10,
+        primaryPainRegion: "Bahu Kanan",
+        painCharacteristics: ["Nyeri tekan"],
+        aggravatingFactors: "Mengangkat beban",
+        relievingFactors: "Kompres hangat",
+      };
+      const res = painAssessmentSchema.safeParse(validPain);
+      expect(res.success).toBe(true);
+    });
+
+    it("should reject VAS values out of bounds (< 0 or > 10)", () => {
+      const invalidPain = {
+        vasRest: -1,
+        vasMotion: 11,
+        vasPressure: 4,
+        primaryPainRegion: "Bahu",
+      };
+      const res = painAssessmentSchema.safeParse(invalidPain);
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues.length).toBeGreaterThanOrEqual(2);
+      }
+    });
+  });
+
+  describe("SOAP A - ICD-10 Format Validation", () => {
+    it("should pass valid ICD-10 formats", () => {
+      const validCodes = ["M75.0", "M54.5", "S83.5", "G56.0", "I69.3", "M17", "J44.9"];
+      validCodes.forEach((code) => {
+        expect(ICD10_REGEX.test(code)).toBe(true);
+      });
+
+      const res = clinicalDiagnosisSchema.safeParse({
+        physioDiagnosis: "Frozen Shoulder",
+        icd10Code: "M75.0",
+        icd10Description: "Adhesive capsulitis",
+        shortTermGoal: "Penurunan VAS",
+        longTermGoal: "ROM penuh",
+      });
+      expect(res.success).toBe(true);
+    });
+
+    it("should reject invalid ICD-10 formats", () => {
+      const invalidCodes = ["m75.0", "75.0", "INVALID", "M75000", "", "M75.012"];
+      invalidCodes.forEach((code) => {
+        expect(ICD10_REGEX.test(code)).toBe(false);
+      });
+
+      const res = clinicalDiagnosisSchema.safeParse({
+        physioDiagnosis: "Frozen Shoulder",
+        icd10Code: "invalid-code",
+        icd10Description: "Adhesive capsulitis",
+        shortTermGoal: "Penurunan VAS",
+        longTermGoal: "ROM penuh",
+      });
+      expect(res.success).toBe(false);
+      if (!res.success) {
+        expect(res.error.issues[0].message).toContain("Format ICD-10 tidak valid");
+      }
+    });
+  });
+
+  describe("Full Patient & Session Mock Data Verification via Zod", () => {
+    it("should validate all INITIAL_PATIENTS against patientSchema", () => {
+      INITIAL_PATIENTS.forEach((patient) => {
+        const res = patientSchema.safeParse(patient);
+        expect(res.success).toBe(true);
+      });
+    });
+
+    it("should validate all INITIAL_SESSIONS against therapySessionSchema", () => {
+      INITIAL_SESSIONS.forEach((session) => {
+        const res = therapySessionSchema.safeParse(session);
+        expect(res.success).toBe(true);
+      });
+    });
+  });
+});
+

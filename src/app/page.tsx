@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { INITIAL_PATIENTS, INITIAL_SESSIONS, CLINICAL_REFERENCES } from "../data/mockPhysioData";
 import { Patient, TherapySession } from "../types/physio";
+import { newPatientInputSchema, therapySessionSchema } from "../schemas/soapValidation";
 import { BodyChart } from "../components/BodyChart";
 import { VasPainScale } from "../components/VasPainScale";
 import { GoniometryTracker } from "../components/GoniometryTracker";
@@ -49,6 +50,7 @@ export default function FisiomedicDashboard() {
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
 
   // New patient form state
+  const [patientFormError, setPatientFormError] = useState<string | null>(null);
   const [newPatientForm, setNewPatientForm] = useState({
     fullName: "",
     nik: "",
@@ -62,6 +64,7 @@ export default function FisiomedicDashboard() {
   });
 
   // New session form state
+  const [sessionFormError, setSessionFormError] = useState<string | null>(null);
   const [newSessionForm, setNewSessionForm] = useState({
     sessionNumber: 5,
     sessionDate: new Date().toISOString().split("T")[0],
@@ -126,7 +129,12 @@ export default function FisiomedicDashboard() {
   // Handle register new patient
   const handleCreatePatient = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPatientForm.fullName || !newPatientForm.nik) return;
+    const validation = newPatientInputSchema.safeParse(newPatientForm);
+    if (!validation.success) {
+      setPatientFormError(validation.error.issues[0]?.message || "Data pasien tidak valid");
+      return;
+    }
+    setPatientFormError(null);
 
     const newId = `pat-${Date.now()}`;
     const newRecordNum = `RM-FT-2026-${String(patients.length + 1).padStart(4, "0")}`;
@@ -134,15 +142,15 @@ export default function FisiomedicDashboard() {
     const created: Patient = {
       id: newId,
       recordNumber: newRecordNum,
-      nik: newPatientForm.nik,
-      fullName: newPatientForm.fullName,
-      birthDate: newPatientForm.birthDate || "1990-01-01",
-      gender: newPatientForm.gender,
-      phoneNumber: newPatientForm.phoneNumber || "08123456789",
-      address: newPatientForm.address || "Kabupaten Trenggalek",
-      insuranceType: newPatientForm.insuranceType,
-      bpjsCardNumber: newPatientForm.bpjsCardNumber,
-      referralSource: newPatientForm.referralSource || "Rujukan Mandiri",
+      nik: validation.data.nik,
+      fullName: validation.data.fullName,
+      birthDate: validation.data.birthDate || "1990-01-01",
+      gender: validation.data.gender,
+      phoneNumber: validation.data.phoneNumber || "08123456789",
+      address: validation.data.address || "Kabupaten Trenggalek",
+      insuranceType: validation.data.insuranceType,
+      bpjsCardNumber: validation.data.bpjsCardNumber,
+      referralSource: validation.data.referralSource || "Rujukan Mandiri",
       satuSehatId: `P-3503-${Math.floor(100000 + Math.random() * 900000)}`,
       registeredAt: new Date().toISOString().split("T")[0],
     };
@@ -225,7 +233,14 @@ export default function FisiomedicDashboard() {
       billingStatus: selectedPatient.insuranceType === "BPJS" ? "KLAIM_BPJS" : "PENDING",
     };
 
-    saveSessions([createdSession, ...sessions]);
+    const sessionValidation = therapySessionSchema.safeParse(createdSession);
+    if (!sessionValidation.success) {
+      setSessionFormError(sessionValidation.error.issues[0]?.message || "Data sesi tidak valid");
+      return;
+    }
+    setSessionFormError(null);
+
+    saveSessions([sessionValidation.data, ...sessions]);
     setShowNewSessionModal(false);
   };
 
@@ -896,6 +911,11 @@ export default function FisiomedicDashboard() {
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-5">
             <h3 className="text-sm font-bold text-white mb-3">Registrasi Pasien Fisioterapi Baru</h3>
+            {patientFormError && (
+              <div className="p-2 mb-2 bg-rose-950/80 border border-rose-800 rounded text-rose-300 text-xs">
+                {patientFormError}
+              </div>
+            )}
             <form onSubmit={handleCreatePatient} className="space-y-3 text-xs">
               <div>
                 <label className="text-slate-400 block mb-1">Nama Lengkap Pasien *</label>
@@ -1002,6 +1022,11 @@ export default function FisiomedicDashboard() {
             <p className="text-xs text-slate-400 mb-4">
               Pasien: {selectedPatient.fullName} ({selectedPatient.recordNumber})
             </p>
+            {sessionFormError && (
+              <div className="p-2 mb-2 bg-rose-950/80 border border-rose-800 rounded text-rose-300 text-xs">
+                {sessionFormError}
+              </div>
+            )}
             <form onSubmit={handleCreateSession} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>
