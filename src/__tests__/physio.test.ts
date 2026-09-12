@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { CLINICAL_REFERENCES, INITIAL_PATIENTS, INITIAL_SESSIONS } from "../data/mockPhysioData";
+import {
+  CLINICAL_REFERENCES,
+  INITIAL_PATIENTS,
+  INITIAL_SESSIONS,
+  INITIAL_APPOINTMENTS,
+} from "../data/mockPhysioData";
 import { SOAP_FAST_TEMPLATES } from "../data/soapTemplates";
+import { calculateBpjsQuota, formatIndonesianDate } from "../utils/scheduleHelper";
+import { buildSatuSehatFhirBundle, getFhirFilename } from "../utils/fhirHelper";
 import {
   patientSchema,
   newPatientInputSchema,
@@ -335,6 +342,90 @@ describe("FISIOMEDIC Zod Runtime Validation Tests", () => {
       expect(getStatus(7)).toBe("ACTIVE");
       expect(getStatus(8)).toBe("COMPLETED");
       expect(getStatus(9)).toBe("COMPLETED");
+    });
+  });
+
+  describe("Appointment Schedule & BPJS Quota Tracking", () => {
+    it("should have valid initial appointments list", () => {
+      expect(INITIAL_APPOINTMENTS.length).toBeGreaterThan(0);
+      INITIAL_APPOINTMENTS.forEach((apt) => {
+        expect(apt.id).toBeDefined();
+        expect(apt.patientId).toBeDefined();
+        expect(apt.scheduledDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(apt.scheduledTime).toMatch(/^\d{2}:\d{2}\s*WIB$/);
+        expect(apt.sessionNumber).toBeGreaterThanOrEqual(1);
+        expect(apt.totalQuota).toBeGreaterThanOrEqual(apt.sessionNumber);
+      });
+    });
+
+    it("should accurately calculate BPJS quota metrics", () => {
+      // Normal ongoing session
+      const midQuota = calculateBpjsQuota(5, 8);
+      expect(midQuota.used).toBe(5);
+      expect(midQuota.total).toBe(8);
+      expect(midQuota.remaining).toBe(3);
+      expect(midQuota.percent).toBe(63);
+      expect(midQuota.isWarning).toBe(false);
+      expect(midQuota.isExhausted).toBe(false);
+      expect(midQuota.statusLabel).toContain("Sisa 3 Sesi");
+
+      // Warning when remaining <= 2
+      const warningQuota = calculateBpjsQuota(7, 8);
+      expect(warningQuota.remaining).toBe(1);
+      expect(warningQuota.isWarning).toBe(true);
+      expect(warningQuota.isExhausted).toBe(false);
+      expect(warningQuota.statusLabel).toContain("Kuota Hampir Habis");
+
+      // Full quota (session 8 of 8)
+      const fullQuota = calculateBpjsQuota(8, 8);
+      expect(fullQuota.remaining).toBe(0);
+      expect(fullQuota.percent).toBe(100);
+      expect(fullQuota.isExhausted).toBe(true);
+      expect(fullQuota.statusLabel).toContain("Siklus Penuh (8 Sesi)");
+    });
+
+    it("should format Indonesian date strings correctly", () => {
+      const formatted = formatIndonesianDate("2026-09-14");
+      expect(formatted).toBe("Senin, 14 September 2026");
+    });
+  });
+
+  describe("SatuSehat FHIR Bundle Generation & Download Helper", () => {
+    it("should build a valid FHIR R4 transaction bundle", () => {
+      const patient = INITIAL_PATIENTS[0];
+      const session = INITIAL_SESSIONS[0];
+
+      const bundle = buildSatuSehatFhirBundle(patient, session);
+      expect(bundle.resourceType).toBe("Bundle");
+      expect(bundle.type).toBe("transaction");
+      expect(bundle.entry.length).toBeGreaterThanOrEqual(4);
+
+      // Verify Encounter
+      const encounter = bundle.entry.find((e) => e.resource.resourceType === "Encounter");
+      expect(encounter).toBeDefined();
+      expect(encounter?.resource.status).toBe("finished");
+      expect(encounter?.resource.subject.reference).toContain(patient.satuSehatId || patient.nik);
+
+      // Verify Condition
+      const condition = bundle.entry.find((e) => e.resource.resourceType === "Condition");
+      expect(condition).toBeDefined();
+      expect(condition?.resource.code.coding[0].code).toBe(session.diagnosis.icd10Code);
+
+      // Verify Observation (VAS scale with LOINC code)
+      const observation = bundle.entry.find((e) => e.resource.resourceType === "Observation");
+      expect(observation).toBeDefined();
+      expect(observation?.resource.code.coding[0].code).toBe("72514-3");
+      expect(observation?.resource.valueQuantity.value).toBe(session.pain.vasMotion);
+
+      // Verify Procedure(s)
+      const procedures = bundle.entry.filter((e) => e.resource.resourceType === "Procedure");
+      expect(procedures.length).toBe(session.diagnosis.icd9Procedures.length);
+    });
+
+    it("should generate standardized FHIR filename for direct download", () => {
+      const filename = getFhirFilename("RM-FT-2026-0041", 4);
+      expect(filename).toBe("SatuSehat-FHIR-RM-FT-2026-0041-Sesi4.json");
+      expect(filename.endsWith(".json")).toBe(true);
     });
   });
 });

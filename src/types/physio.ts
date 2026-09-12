@@ -126,3 +126,22 @@ export interface ClinicalReference {
   typicalIcd9: string[];
   recommendedModalities: string[];
 }
+
+export interface AppointmentItem {
+  id: string;
+  patientId: string;
+  patientName: string;
+  recordNumber: string;
+  insuranceType: InsuranceType;
+  bpjsCardNumber?: string;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // HH:mm WIB
+  sessionNumber: number;
+  totalQuota: number;
+  therapistName: string;
+  therapistSipf: string;
+  room: string;
+  diagnosisSnippet: string;
+  status: "TERJADWAL" | "SELESAI" | "KONSULTASI_DOKTER";
+}
+

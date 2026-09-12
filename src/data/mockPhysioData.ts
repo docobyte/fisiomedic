@@ -1,4 +1,4 @@
-import { Patient, TherapySession, ClinicalReference } from "../types/physio";
+import { Patient, TherapySession, ClinicalReference, AppointmentItem } from "../types/physio";
 
 export const CLINICAL_REFERENCES: ClinicalReference[] = [
   {
@@ -358,3 +358,74 @@ export const INITIAL_SESSIONS: TherapySession[] = [
     totalCost: 175000,
   },
 ];
+
+export const INITIAL_APPOINTMENTS: AppointmentItem[] = [
+  {
+    id: "apt-01",
+    patientId: "pat-01",
+    patientName: "Bambang Sudarmono",
+    recordNumber: "RM-FT-2026-0041",
+    insuranceType: "BPJS",
+    bpjsCardNumber: "0001284920481",
+    scheduledDate: "2026-09-14",
+    scheduledTime: "08:30 WIB",
+    sessionNumber: 5,
+    totalQuota: 8,
+    therapistName: "Ahmad Fauzi, S.Tr.Ft",
+    therapistSipf: "SIPF.35.03.2024.0042",
+    room: "Ruang Elektroterapi 1",
+    diagnosisSnippet: "Adhesive Capsulitis Bahu Kanan (M75.0)",
+    status: "TERJADWAL",
+  },
+  {
+    id: "apt-02",
+    patientId: "pat-02",
+    patientName: "Siti Nurjanah",
+    recordNumber: "RM-FT-2026-0089",
+    insuranceType: "BPJS",
+    bpjsCardNumber: "0001948291039",
+    scheduledDate: "2026-09-15",
+    scheduledTime: "09:30 WIB",
+    sessionNumber: 3,
+    totalQuota: 8,
+    therapistName: "Dewi Lestari, A.Md.Ft",
+    therapistSipf: "SIPF.35.03.2023.0019",
+    room: "Ruang Latihan & Gimnasium",
+    diagnosisSnippet: "Low Back Pain / HNP L4-L5 (M54.5)",
+    status: "TERJADWAL",
+  },
+  {
+    id: "apt-03",
+    patientId: "pat-03",
+    patientName: "Hariyanto Pratama",
+    recordNumber: "RM-FT-2026-0112",
+    insuranceType: "UMUM",
+    scheduledDate: "2026-09-16",
+    scheduledTime: "10:15 WIB",
+    sessionNumber: 2,
+    totalQuota: 6,
+    therapistName: "Ahmad Fauzi, S.Tr.Ft",
+    therapistSipf: "SIPF.35.03.2024.0042",
+    room: "Ruang Manual Therapy",
+    diagnosisSnippet: "Sprain ACL Post-Op Dextra (S83.5)",
+    status: "TERJADWAL",
+  },
+  {
+    id: "apt-04",
+    patientId: "pat-04",
+    patientName: "Endang Supriyati",
+    recordNumber: "RM-FT-2026-0145",
+    insuranceType: "BPJS",
+    bpjsCardNumber: "0002194820194",
+    scheduledDate: "2026-09-17",
+    scheduledTime: "11:00 WIB",
+    sessionNumber: 8,
+    totalQuota: 8,
+    therapistName: "Dewi Lestari, A.Md.Ft",
+    therapistSipf: "SIPF.35.03.2023.0019",
+    room: "Ruang Terapi Fungsional",
+    diagnosisSnippet: "Osteoarthritis Genu Bilateral (M17.0)",
+    status: "TERJADWAL",
+  },
+];
+

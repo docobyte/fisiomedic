@@ -26,7 +26,7 @@ import {
   Filter,
   CheckSquare,
 } from "lucide-react";
-import { INITIAL_PATIENTS, INITIAL_SESSIONS, CLINICAL_REFERENCES } from "../data/mockPhysioData";
+import { INITIAL_PATIENTS, INITIAL_SESSIONS, CLINICAL_REFERENCES, INITIAL_APPOINTMENTS } from "../data/mockPhysioData";
 import { SOAP_FAST_TEMPLATES } from "../data/soapTemplates";
 import { Patient, TherapySession } from "../types/physio";
 import {
@@ -40,6 +40,7 @@ import { GoniometryTracker } from "../components/GoniometryTracker";
 import { SatuSehatFhirModal } from "../components/SatuSehatFhirModal";
 import { PrintableResume } from "../components/PrintableResume";
 import { BillingModal } from "../components/BillingModal";
+import { AppointmentScheduleView } from "../components/AppointmentScheduleView";
 
 const STORAGE_KEY_PATIENTS = "fisiomedic_patients_v1";
 const STORAGE_KEY_SESSIONS = "fisiomedic_sessions_v1";
@@ -48,7 +49,7 @@ export default function FisiomedicDashboard() {
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [sessions, setSessions] = useState<TherapySession[]>(INITIAL_SESSIONS);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("pat-01");
-  const [activeTab, setActiveTab] = useState<"patients" | "soap" | "progress" | "reference">("patients");
+  const [activeTab, setActiveTab] = useState<"patients" | "soap" | "schedule" | "progress" | "reference">("patients");
   const [searchQuery, setSearchQuery] = useState("");
   const [insuranceFilter, setInsuranceFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ALL");
@@ -586,6 +587,16 @@ export default function FisiomedicDashboard() {
             <Stethoscope className="w-4 h-4" /> Pemeriksaan Klinis & SOAP
           </button>
           <button
+            onClick={() => setActiveTab("schedule")}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
+              activeTab === "schedule"
+                ? "bg-teal-950 text-teal-300 border border-teal-800"
+                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+            }`}
+          >
+            <Calendar className="w-4 h-4" /> Jadwal Kontrol Terapi
+          </button>
+          <button
             onClick={() => setActiveTab("progress")}
             className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
               activeTab === "progress"
@@ -1073,6 +1084,21 @@ export default function FisiomedicDashboard() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* TAB: JADWAL KONTROL TERAPI */}
+        {activeTab === "schedule" && (
+          <AppointmentScheduleView
+            appointments={INITIAL_APPOINTMENTS}
+            onSelectPatient={(patientId) => {
+              setSelectedPatientId(patientId);
+              setActiveTab("soap");
+            }}
+            onOpenResume={(patientId) => {
+              setSelectedPatientId(patientId);
+              setShowPrintModal(true);
+            }}
+          />
         )}
 
         {/* TAB 3: EVALUASI PROGRES & GRAFIK NYERI */}

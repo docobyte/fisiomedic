@@ -20,8 +20,8 @@ export const PrintableResume: React.FC<PrintableResumeProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white text-slate-900 rounded-xl w-full max-w-4xl shadow-2xl p-8 my-8 relative">
+    <div className="printable-resume-modal fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+      <div className="printable-resume-sheet bg-white text-slate-900 rounded-xl w-full max-w-4xl shadow-2xl p-8 my-8 relative">
         {/* Floating action bar (Hidden during print) */}
         <div className="no-print absolute top-4 right-4 flex items-center gap-2">
           <button

@@ -34,16 +34,76 @@ body {
   background: #334155;
 }
 
-/* Print styling for clinical resume */
+/* Print styling for clinical resume A4 */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 10mm 12mm;
+  }
+
+  html,
   body {
     background: #ffffff !important;
     color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+
+  /* Hide app navigation, buttons, sidebars, headers, footer and background */
+  header,
+  footer,
+  nav,
+  aside,
+  main,
   .no-print {
     display: none !important;
   }
-  .print-only {
+
+  /* Show and unwrap printable resume modal container */
+  .printable-resume-modal {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
     display: block !important;
+    z-index: 99999 !important;
+  }
+
+  .printable-resume-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .printable-resume-sheet * {
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .printable-resume-sheet .border-slate-900,
+  .printable-resume-sheet .border-b-2 {
+    border-color: #0f172a !important;
+  }
+
+  .printable-resume-sheet .bg-slate-100,
+  .printable-resume-sheet .bg-slate-50\/50 {
+    background-color: #f1f5f9 !important;
+  }
+
+  .printable-resume-sheet .border-teal-600 {
+    border-left-color: #0f766e !important;
   }
 }
+
