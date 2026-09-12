@@ -41,6 +41,10 @@ import { SatuSehatFhirModal } from "../components/SatuSehatFhirModal";
 import { PrintableResume } from "../components/PrintableResume";
 import { BillingModal } from "../components/BillingModal";
 import { AppointmentScheduleView } from "../components/AppointmentScheduleView";
+import { Sidebar } from "../components/dashboard/Sidebar";
+import { Header } from "../components/dashboard/Header";
+import { MetricCards } from "../components/dashboard/MetricCards";
+import { OverviewView } from "../components/dashboard/OverviewView";
 
 const STORAGE_KEY_PATIENTS = "fisiomedic_patients_v1";
 const STORAGE_KEY_SESSIONS = "fisiomedic_sessions_v1";
@@ -49,7 +53,8 @@ export default function FisiomedicDashboard() {
   const [patients, setPatients] = useState<Patient[]>(INITIAL_PATIENTS);
   const [sessions, setSessions] = useState<TherapySession[]>(INITIAL_SESSIONS);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("pat-01");
-  const [activeTab, setActiveTab] = useState<"patients" | "soap" | "schedule" | "progress" | "reference">("patients");
+  const [activeTab, setActiveTab] = useState<"overview" | "patients" | "soap" | "schedule" | "progress" | "reference">("overview");
+  const [isOpenMobile, setIsOpenMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [insuranceFilter, setInsuranceFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ALL");
@@ -399,224 +404,161 @@ export default function FisiomedicDashboard() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#07090d]">
-      {/* 1. TOP HEADER / APP BAR */}
-      <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur sticky top-0 z-30 px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 shadow-inner">
-              <Stethoscope className="w-5 h-5" />
-            </div>
-            <div>
+    <div className="min-h-screen flex bg-[#07090d]">
+      {/* RizzUI Collapsible Sidebar */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        patientCount={patients.length}
+        activeSessionsCount={sessions.length}
+        isOpenMobile={isOpenMobile}
+        setIsOpenMobile={setIsOpenMobile}
+        onNewPatient={() => setShowNewPatientModal(true)}
+        onOpenFhir={() => setShowFhirModal(true)}
+        onOpenBilling={() => setShowBillingModal(true)}
+        onOpenPrint={() => setShowPrintModal(true)}
+        onExportDb={handleExportDatabase}
+      />
+
+      {/* RizzUI Main Area */}
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-72">
+        {/* RizzUI Sticky Header */}
+        <Header
+          activeTab={activeTab}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          onToggleMobileMenu={() => setIsOpenMobile((prev) => !prev)}
+          onNewPatient={() => setShowNewPatientModal(true)}
+          onExportDatabase={handleExportDatabase}
+          onImportClick={() => fileInputRef.current?.click()}
+          onResetData={handleResetData}
+        />
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleImportDatabase}
+          className="hidden"
+        />
+
+        {/* Backup / Alert Toast Banner */}
+        {backupStatusMessage && (
+          <div className="w-full px-4 lg:px-6 pt-3">
+            <div
+              className={`p-3 rounded-lg border text-xs flex items-center justify-between shadow-md ${
+                backupStatusMessage.type === "success"
+                  ? "text-emerald-300 bg-emerald-950/80 border-emerald-800"
+                  : "text-rose-300 bg-rose-950/80 border-rose-800"
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-                  FISIOMEDIC
-                  <span className="text-[10px] font-mono bg-teal-950/90 text-teal-300 border border-teal-800/80 px-2 py-0.5 rounded-full font-medium">
-                    SIMRS &bull; RME Fisioterapi
-                  </span>
-                </h1>
+                <Database className="w-4 h-4" />
+                <span>{backupStatusMessage.text}</span>
               </div>
-              <p className="text-xs text-slate-400">
-                Sistem Informasi Manajemen Pelayanan Fisioterapi &bull; Standar IFI &amp; PMK 24/2022
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {/* Bridging Status Badges */}
-            <div className="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-2.5 py-1.5 rounded-lg text-xs">
-              <div className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="font-medium text-[11px]">SatuSehat FHIR Aktif</span>
-              </div>
-              <span className="text-slate-700">|</span>
-              <div className="flex items-center gap-1 text-teal-300 text-[11px]">
-                <ShieldCheck className="w-3.5 h-3.5 text-teal-400" />
-                <span>BPJS VClaim Bridging</span>
-              </div>
-            </div>
-
-            {/* Database Backup & Restore */}
-            <div className="flex items-center gap-1.5">
               <button
-                type="button"
-                onClick={handleExportDatabase}
-                title="Ekspor database pasien & sesi (.json)"
-                className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-teal-300 border border-slate-800 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+                onClick={() => setBackupStatusMessage(null)}
+                className="text-slate-400 hover:text-white px-2 py-0.5 rounded"
               >
-                <Download className="w-3.5 h-3.5 text-teal-400" />
-                <span className="hidden md:inline">Ekspor Database</span>
+                Tutup
               </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                title="Impor database pasien & sesi (.json)"
-                className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                <Upload className="w-3.5 h-3.5 text-teal-400" />
-                <span className="hidden md:inline">Impor Database</span>
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleImportDatabase}
-                className="hidden"
-              />
             </div>
+          </div>
+        )}
 
+        {/* Main Content Workspace */}
+        <main className="flex-1 p-4 lg:p-6 space-y-6">
+          {/* Top Metric Cards */}
+          <MetricCards
+            patients={patients}
+            sessions={sessions}
+            onSelectTab={(tab) => setActiveTab(tab)}
+          />
+
+          {/* Navigation Pill Tabs */}
+          <div className="flex items-center gap-1.5 border-b border-slate-800/90 pb-2 overflow-x-auto">
             <button
-              onClick={() => setShowNewPatientModal(true)}
-              className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition-colors"
+              onClick={() => setActiveTab("overview")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "overview"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" /> Pasien Baru
+              <Activity className="w-3.5 h-3.5" /> Overview
             </button>
-
             <button
-              onClick={handleResetData}
-              title="Reset ke data simulasi awal"
-              className="p-2 text-slate-400 hover:text-slate-200 bg-slate-900 border border-slate-800 rounded-lg transition-colors"
+              onClick={() => setActiveTab("patients")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "patients"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
             >
-              <RotateCcw className="w-4 h-4" />
+              <Users className="w-3.5 h-3.5" /> Daftar Pasien & RME
             </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Backup / Alert Toast Banner */}
-      {backupStatusMessage && (
-        <div className="max-w-7xl w-full mx-auto px-4 pt-3">
-          <div
-            className={`p-3 rounded-lg border text-xs flex items-center justify-between shadow-md ${
-              backupStatusMessage.type === "success"
-                ? "text-emerald-300 bg-emerald-950/80 border-emerald-800"
-                : "text-rose-300 bg-rose-950/80 border-rose-800"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Database className="w-4 h-4" />
-              <span>{backupStatusMessage.text}</span>
-            </div>
             <button
-              onClick={() => setBackupStatusMessage(null)}
-              className="text-slate-400 hover:text-white px-2 py-0.5 rounded"
+              onClick={() => setActiveTab("soap")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "soap"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
             >
-              Tutup
+              <Stethoscope className="w-3.5 h-3.5" /> Pemeriksaan Klinis & SOAP
+            </button>
+            <button
+              onClick={() => setActiveTab("schedule")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "schedule"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" /> Jadwal Kontrol Terapi
+            </button>
+            <button
+              onClick={() => setActiveTab("progress")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "progress"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
+            >
+              <TrendingDown className="w-3.5 h-3.5" /> Evaluasi Sesi & Nyeri
+            </button>
+            <button
+              onClick={() => setActiveTab("reference")}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap ${
+                activeTab === "reference"
+                  ? "bg-teal-950 text-teal-300 border border-teal-800 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Standar Klinis IFI & ICD-10
             </button>
           </div>
-        </div>
-      )}
 
-      {/* 2. MAIN CONTAINER */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 space-y-5">
-        {/* STATS OVERVIEW CARDS */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-400 block font-medium">Pasien Fisioterapi Aktif</span>
-              <span className="text-2xl font-bold font-mono text-white mt-0.5 block">{patients.length}</span>
-              <span className="text-[10px] text-teal-400 flex items-center gap-1 mt-0.5">
-                <CheckCircle className="w-3 h-3" /> 100% Terdaftar RME
-              </span>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-teal-950/60 border border-teal-800/60 flex items-center justify-center text-teal-400">
-              <Users className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-400 block font-medium">Total Sesi Terapi</span>
-              <span className="text-2xl font-bold font-mono text-white mt-0.5 block">{sessions.length}</span>
-              <span className="text-[10px] text-cyan-400 flex items-center gap-1 mt-0.5">
-                <Clock className="w-3 h-3" /> Kuota BPJS 8 Sesi / Siklus
-              </span>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center text-cyan-400">
-              <Calendar className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-400 block font-medium">Rerata Reduksi Nyeri VAS</span>
-              <span className="text-2xl font-bold font-mono text-emerald-400 mt-0.5 block">-54.2%</span>
-              <span className="text-[10px] text-emerald-400/90 flex items-center gap-1 mt-0.5">
-                <TrendingDown className="w-3 h-3" /> Evaluasi Sesi 1 ke Sesi 4
-              </span>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-emerald-950/60 border border-emerald-800/60 flex items-center justify-center text-emerald-400">
-              <Activity className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl p-3.5 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-slate-400 block font-medium">Kepatuhan SatuSehat</span>
-              <span className="text-2xl font-bold font-mono text-teal-300 mt-0.5 block">100%</span>
-              <span className="text-[10px] text-teal-400 flex items-center gap-1 mt-0.5">
-                <ShieldCheck className="w-3 h-3" /> PMK 24/2022 Terverifikasi
-              </span>
-            </div>
-            <div className="w-10 h-10 rounded-lg bg-teal-950/60 border border-teal-800/60 flex items-center justify-center text-teal-400">
-              <Building2 className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-
-        {/* NAVIGATION TABS */}
-        <div className="flex items-center gap-1 border-b border-slate-800/90 pb-1">
-          <button
-            onClick={() => setActiveTab("patients")}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-              activeTab === "patients"
-                ? "bg-teal-950 text-teal-300 border border-teal-800"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-            }`}
-          >
-            <Users className="w-4 h-4" /> Daftar Pasien & RME
-          </button>
-          <button
-            onClick={() => setActiveTab("soap")}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-              activeTab === "soap"
-                ? "bg-teal-950 text-teal-300 border border-teal-800"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-            }`}
-          >
-            <Stethoscope className="w-4 h-4" /> Pemeriksaan Klinis & SOAP
-          </button>
-          <button
-            onClick={() => setActiveTab("schedule")}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-              activeTab === "schedule"
-                ? "bg-teal-950 text-teal-300 border border-teal-800"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-            }`}
-          >
-            <Calendar className="w-4 h-4" /> Jadwal Kontrol Terapi
-          </button>
-          <button
-            onClick={() => setActiveTab("progress")}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-              activeTab === "progress"
-                ? "bg-teal-950 text-teal-300 border border-teal-800"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-            }`}
-          >
-            <Activity className="w-4 h-4" /> Evaluasi Sesi & Grafik Nyeri
-          </button>
-          <button
-            onClick={() => setActiveTab("reference")}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors ${
-              activeTab === "reference"
-                ? "bg-teal-950 text-teal-300 border border-teal-800"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
-            }`}
-          >
-            <BookOpen className="w-4 h-4" /> Standar Klinis IFI & ICD-10
-          </button>
-        </div>
+          {/* TAB 0: EXECUTIVE OVERVIEW */}
+          {activeTab === "overview" && (
+            <OverviewView
+              patients={patients}
+              sessions={sessions}
+              onSelectPatient={(id) => setSelectedPatientId(id)}
+              onGoToSoap={(patId) => {
+                if (patId) setSelectedPatientId(patId);
+                setActiveTab("soap");
+              }}
+              onGoToSchedule={() => setActiveTab("schedule")}
+              onApplyTemplate={(tplId) => {
+                setSelectedTemplateId(tplId);
+                setActiveTab("soap");
+              }}
+              onOpenFhir={() => setShowFhirModal(true)}
+              onOpenBilling={() => setShowBillingModal(true)}
+              onOpenPrint={() => setShowPrintModal(true)}
+            />
+          )}
 
         {/* TAB 1: DAFTAR PASIEN & REKAM MEDIS */}
         {activeTab === "patients" && (
@@ -1504,10 +1446,10 @@ export default function FisiomedicDashboard() {
         </div>
       )}
 
-      {/* FOOTER */}
-      <footer className="border-t border-slate-900 py-3 text-center text-[11px] text-slate-500">
-        FISIOMEDIC &bull; Sistem Informasi Manajemen Praktik &amp; Klinik Fisioterapi Indonesia &bull; DocoByte Ecosystem
-      </footer>
+        <footer className="border-t border-slate-900 py-4 px-6 text-center text-[11px] text-slate-500 font-mono">
+          FISIOMEDIC &bull; Sistem Informasi Manajemen Praktik &amp; Klinik Fisioterapi Indonesia &bull; DocoByte Ecosystem &bull; RizzUI Dashboard
+        </footer>
+      </div>
     </div>
   );
 }
