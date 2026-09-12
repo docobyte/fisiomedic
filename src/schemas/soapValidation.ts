@@ -151,9 +151,19 @@ export const therapySessionSchema = z.object({
   totalCost: z.number().min(0),
 });
 
+// 8. Database Backup & Restore Schema
+export const databaseBackupSchema = z.object({
+  version: z.string().default("1.0"),
+  exportedAt: z.string().min(1, "Waktu ekspor wajib ada"),
+  app: z.literal("FISIOMEDIC").default("FISIOMEDIC"),
+  patients: z.array(patientSchema).min(1, "Minimal 1 data pasien dalam backup"),
+  sessions: z.array(therapySessionSchema).min(1, "Minimal 1 data sesi dalam backup"),
+});
+
 export type PatientValidation = z.infer<typeof patientSchema>;
 export type NewPatientInput = z.infer<typeof newPatientInputSchema>;
 export type TherapySessionValidation = z.infer<typeof therapySessionSchema>;
 export type GoniometryRomValidation = z.infer<typeof goniometryRomSchema>;
 export type PainAssessmentValidation = z.infer<typeof painAssessmentSchema>;
 export type ClinicalDiagnosisValidation = z.infer<typeof clinicalDiagnosisSchema>;
+export type DatabaseBackupValidation = z.infer<typeof databaseBackupSchema>;

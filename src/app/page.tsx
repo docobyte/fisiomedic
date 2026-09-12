@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Activity,
   Users,
@@ -20,10 +20,20 @@ import {
   Receipt,
   RotateCcw,
   Sparkles,
+  Download,
+  Upload,
+  Database,
+  Filter,
+  CheckSquare,
 } from "lucide-react";
 import { INITIAL_PATIENTS, INITIAL_SESSIONS, CLINICAL_REFERENCES } from "../data/mockPhysioData";
+import { SOAP_FAST_TEMPLATES } from "../data/soapTemplates";
 import { Patient, TherapySession } from "../types/physio";
-import { newPatientInputSchema, therapySessionSchema } from "../schemas/soapValidation";
+import {
+  newPatientInputSchema,
+  therapySessionSchema,
+  databaseBackupSchema,
+} from "../schemas/soapValidation";
 import { BodyChart } from "../components/BodyChart";
 import { VasPainScale } from "../components/VasPainScale";
 import { GoniometryTracker } from "../components/GoniometryTracker";
@@ -41,6 +51,10 @@ export default function FisiomedicDashboard() {
   const [activeTab, setActiveTab] = useState<"patients" | "soap" | "progress" | "reference">("patients");
   const [searchQuery, setSearchQuery] = useState("");
   const [insuranceFilter, setInsuranceFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "COMPLETED">("ALL");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [backupStatusMessage, setBackupStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Modals state
   const [showFhirModal, setShowFhirModal] = useState(false);
@@ -116,15 +130,144 @@ export default function FisiomedicDashboard() {
     saveSessions(updated);
   };
 
-  // Filtered patients
+  // Status helper: completed if sessionNumber reaches 8, else active
+  const getPatientStatus = (patientId: string): "ACTIVE" | "COMPLETED" => {
+    const patSessions = sessions.filter((s) => s.patientId === patientId);
+    const maxSession = patSessions.reduce((max, s) => Math.max(max, s.sessionNumber), 0);
+    return maxSession >= 8 ? "COMPLETED" : "ACTIVE";
+  };
+
+  const activeCount = patients.filter((p) => getPatientStatus(p.id) === "ACTIVE").length;
+  const completedCount = patients.filter((p) => getPatientStatus(p.id) === "COMPLETED").length;
+
+  // Filtered patients with status & insurance
   const filteredPatients = patients.filter((p) => {
     const matchesSearch =
       p.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.recordNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.nik.includes(searchQuery);
     const matchesInsurance = insuranceFilter === "ALL" || p.insuranceType === insuranceFilter;
-    return matchesSearch && matchesInsurance;
+    const status = getPatientStatus(p.id);
+    const matchesStatus =
+      statusFilter === "ALL" ||
+      (statusFilter === "ACTIVE" && status === "ACTIVE") ||
+      (statusFilter === "COMPLETED" && status === "COMPLETED");
+    return matchesSearch && matchesInsurance && matchesStatus;
   });
+
+  // Fast-template application handler
+  const handleApplyTemplate = (templateId: string) => {
+    const tpl = SOAP_FAST_TEMPLATES.find((t) => t.id === templateId);
+    if (!tpl) return;
+
+    handleUpdateSession({
+      pain: {
+        vasRest: tpl.pain.vasRest,
+        vasMotion: tpl.pain.vasMotion,
+        vasPressure: tpl.pain.vasPressure,
+        primaryPainRegion: tpl.pain.primaryPainRegion,
+        painCharacteristics: [...tpl.pain.painCharacteristics],
+        aggravatingFactors: tpl.pain.aggravatingFactors,
+        relievingFactors: tpl.pain.relievingFactors,
+      },
+      bodyRegions: [...tpl.bodyRegions],
+      goniometry: tpl.goniometry.map((g, idx) => ({ ...g, id: `rom-${Date.now()}-${idx}` })),
+      diagnosis: {
+        physioDiagnosis: tpl.physioDiagnosis,
+        icd10Code: tpl.icd10Code,
+        icd10Description: tpl.icd10Description,
+        icd9Procedures: [...tpl.icd9Procedures],
+        icfImpairment: activeSession.diagnosis.icfImpairment || "Impairment fungsional terkait",
+        icfActivity: activeSession.diagnosis.icfActivity || "Keterbatasan aktivitas harian",
+        icfParticipation: activeSession.diagnosis.icfParticipation || "Partisipasi ADL terbatas",
+        shortTermGoal: tpl.shortTermGoal,
+        longTermGoal: tpl.longTermGoal,
+      },
+      intervention: {
+        modalities: tpl.modalities.map((m, idx) => ({
+          id: `mod-${Date.now()}-${idx}`,
+          type: m.type,
+          dose: m.dose,
+          durationMinutes: m.durationMinutes,
+          targetArea: m.targetArea,
+        })),
+        manualTherapy: [...tpl.manualTherapy],
+        exerciseTherapy: [...tpl.exerciseTherapy],
+        homeProgram: tpl.homeProgram,
+        ergonomicAdvice: tpl.ergonomicAdvice,
+        nextSessionDate: activeSession.intervention.nextSessionDate,
+      },
+      notes: `Asesmen klinis diterapkan dari template: ${tpl.name}.`,
+    });
+
+    setBackupStatusMessage({
+      type: "success",
+      text: `Template SOAP '${tpl.name}' berhasil dimuat ke sesi ini.`,
+    });
+    setTimeout(() => setBackupStatusMessage(null), 4000);
+  };
+
+  // Database Backup Export Handler
+  const handleExportDatabase = () => {
+    const backup = {
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
+      app: "FISIOMEDIC" as const,
+      patients,
+      sessions,
+    };
+    const jsonStr = JSON.stringify(backup, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.download = `fisiomedic-backup-${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setBackupStatusMessage({
+      type: "success",
+      text: `Database berhasil diekspor (${patients.length} pasien, ${sessions.length} sesi).`,
+    });
+    setTimeout(() => setBackupStatusMessage(null), 4000);
+  };
+
+  // Database Restore Import Handler
+  const handleImportDatabase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const raw = JSON.parse(event.target?.result as string);
+        const parsed = databaseBackupSchema.safeParse(raw);
+        if (!parsed.success) {
+          const errMsg = parsed.error.issues[0]?.message || "Format berkas backup tidak valid sesuai schema FISIOMEDIC";
+          setBackupStatusMessage({ type: "error", text: `Gagal impor database: ${errMsg}` });
+          return;
+        }
+
+        const { patients: importedPatients, sessions: importedSessions } = parsed.data;
+        savePatients(importedPatients);
+        saveSessions(importedSessions);
+        if (importedPatients.length > 0) {
+          setSelectedPatientId(importedPatients[0].id);
+        }
+        setBackupStatusMessage({
+          type: "success",
+          text: `Database sukses dipulihkan: ${importedPatients.length} pasien dan ${importedSessions.length} sesi.`,
+        });
+        setTimeout(() => setBackupStatusMessage(null), 4000);
+      } catch {
+        setBackupStatusMessage({ type: "error", text: "File bukan berkas JSON yang valid." });
+        setTimeout(() => setBackupStatusMessage(null), 4000);
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Handle register new patient
   const handleCreatePatient = (e: React.FormEvent) => {
@@ -292,6 +435,35 @@ export default function FisiomedicDashboard() {
               </div>
             </div>
 
+            {/* Database Backup & Restore */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleExportDatabase}
+                title="Ekspor database pasien & sesi (.json)"
+                className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-teal-300 border border-slate-800 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 text-teal-400" />
+                <span className="hidden md:inline">Ekspor Database</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Impor database pasien & sesi (.json)"
+                className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5 text-teal-400" />
+                <span className="hidden md:inline">Impor Database</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportDatabase}
+                className="hidden"
+              />
+            </div>
+
             <button
               onClick={() => setShowNewPatientModal(true)}
               className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-sm transition-colors"
@@ -309,6 +481,30 @@ export default function FisiomedicDashboard() {
           </div>
         </div>
       </header>
+
+      {/* Backup / Alert Toast Banner */}
+      {backupStatusMessage && (
+        <div className="max-w-7xl w-full mx-auto px-4 pt-3">
+          <div
+            className={`p-3 rounded-lg border text-xs flex items-center justify-between shadow-md ${
+              backupStatusMessage.type === "success"
+                ? "text-emerald-300 bg-emerald-950/80 border-emerald-800"
+                : "text-rose-300 bg-rose-950/80 border-rose-800"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4" />
+              <span>{backupStatusMessage.text}</span>
+            </div>
+            <button
+              onClick={() => setBackupStatusMessage(null)}
+              className="text-slate-400 hover:text-white px-2 py-0.5 rounded"
+            >
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. MAIN CONTAINER */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 space-y-5">
@@ -413,149 +609,241 @@ export default function FisiomedicDashboard() {
 
         {/* TAB 1: DAFTAR PASIEN & REKAM MEDIS */}
         {activeTab === "patients" && (
-          <div className="space-y-4">
-            {/* Filter bar */}
-            <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-900/60 border border-slate-800 p-3 rounded-xl">
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Cari nama pasien, No RM, atau NIK..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
-                />
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            {/* SIDEBAR: STATUS FILTER */}
+            <aside className="lg:col-span-1 space-y-3">
+              <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3.5 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-300 pb-2 border-b border-slate-800">
+                  <Filter className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Status Pasien</span>
+                </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <span className="text-xs text-slate-400 font-medium">Penjamin:</span>
-                <select
-                  value={insuranceFilter}
-                  onChange={(e) => setInsuranceFilter(e.target.value)}
-                  className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded-lg px-2.5 py-1.5"
-                >
-                  <option value="ALL">Semua Penjamin</option>
-                  <option value="BPJS">BPJS Kesehatan</option>
-                  <option value="UMUM">Pasien Umum</option>
-                  <option value="ASURANSI_SWASTA">Asuransi Swasta</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Patients List Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {filteredPatients.map((pat) => {
-                const isSelected = pat.id === selectedPatientId;
-                const patSession = sessions.find((s) => s.patientId === pat.id) || sessions[0];
-
-                return (
-                  <div
-                    key={pat.id}
-                    onClick={() => setSelectedPatientId(pat.id)}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-slate-900 border-teal-500/80 shadow-lg ring-1 ring-teal-500/30"
-                        : "bg-slate-900/50 border-slate-800/80 hover:bg-slate-900 hover:border-slate-700"
+                <div className="space-y-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("ALL")}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium transition-colors ${
+                      statusFilter === "ALL"
+                        ? "bg-teal-950 text-teal-300 border border-teal-800"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-slate-100">{pat.fullName}</h3>
-                          <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
-                            {pat.gender === "M" ? "Laki-laki" : "Perempuan"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-mono text-slate-400 mt-0.5">
-                          <span className="text-teal-400 font-semibold">{pat.recordNumber}</span>
-                          <span>&bull;</span>
-                          <span>NIK: {pat.nik}</span>
-                        </div>
-                      </div>
+                    <span>Semua</span>
+                    <span className="font-mono text-[11px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                      {patients.length}
+                    </span>
+                  </button>
 
-                      <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
-                          pat.insuranceType === "BPJS"
-                            ? "bg-teal-950/80 border-teal-800 text-teal-300"
-                            : "bg-cyan-950/80 border-cyan-800 text-cyan-300"
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("ACTIVE")}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium transition-colors ${
+                      statusFilter === "ACTIVE"
+                        ? "bg-teal-950 text-teal-300 border border-teal-800"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                    }`}
+                  >
+                    <span>Aktif (Dalam Perawatan)</span>
+                    <span className="font-mono text-[11px] bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">
+                      {activeCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter("COMPLETED")}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium transition-colors ${
+                      statusFilter === "COMPLETED"
+                        ? "bg-teal-950 text-teal-300 border border-teal-800"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                    }`}
+                  >
+                    <span>Selesai Kuota (8 Sesi)</span>
+                    <span className="font-mono text-[11px] bg-cyan-950/80 text-cyan-300 px-2 py-0.5 rounded border border-cyan-800">
+                      {completedCount}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sidebar Info Card */}
+              <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 space-y-2 text-xs">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Ketentuan Siklus BPJS
+                </span>
+                <p className="text-slate-400 leading-relaxed text-[11px]">
+                  Standar evaluasi klinis fisioterapi BPJS mencakup siklus 8 kali pertemuan sebelum rekonsiliasi rujukan FKRTL.
+                </p>
+                <div className="pt-2 border-t border-slate-800/80 flex justify-between text-[11px]">
+                  <span className="text-slate-400">Total Pasien Terdaftar:</span>
+                  <span className="font-mono font-bold text-teal-400">{patients.length}</span>
+                </div>
+              </div>
+            </aside>
+
+            {/* MAIN CONTENT: PATIENTS LIST */}
+            <div className="lg:col-span-3 space-y-3">
+              {/* Filter bar */}
+              <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-900/60 border border-slate-800 p-3 rounded-xl">
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Cari nama pasien, No RM, atau NIK..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <span className="text-xs text-slate-400 font-medium">Penjamin:</span>
+                  <select
+                    value={insuranceFilter}
+                    onChange={(e) => setInsuranceFilter(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-xs text-slate-300 rounded-lg px-2.5 py-1.5"
+                  >
+                    <option value="ALL">Semua Penjamin</option>
+                    <option value="BPJS">BPJS Kesehatan</option>
+                    <option value="UMUM">Pasien Umum</option>
+                    <option value="ASURANSI_SWASTA">Asuransi Swasta</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Patients List Grid */}
+              {filteredPatients.length === 0 ? (
+                <div className="p-8 text-center bg-slate-900/40 border border-dashed border-slate-800 rounded-xl text-slate-500 text-xs">
+                  Tidak ada pasien yang sesuai dengan filter pencarian dan status saat ini.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {filteredPatients.map((pat) => {
+                    const isSelected = pat.id === selectedPatientId;
+                    const patSession = sessions.find((s) => s.patientId === pat.id) || sessions[0];
+                    const patStatus = getPatientStatus(pat.id);
+
+                    return (
+                      <div
+                        key={pat.id}
+                        onClick={() => setSelectedPatientId(pat.id)}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-slate-900 border-teal-500/80 shadow-lg ring-1 ring-teal-500/30"
+                            : "bg-slate-900/50 border-slate-800/80 hover:bg-slate-900 hover:border-slate-700"
                         }`}
                       >
-                        {pat.insuranceType}
-                      </span>
-                    </div>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold text-slate-100">{pat.fullName}</h3>
+                              <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded">
+                                {pat.gender === "M" ? "Laki-laki" : "Perempuan"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-mono text-slate-400 mt-0.5">
+                              <span className="text-teal-400 font-semibold">{pat.recordNumber}</span>
+                              <span>&bull;</span>
+                              <span>NIK: {pat.nik}</span>
+                            </div>
+                          </div>
 
-                    {/* Clinical summary preview */}
-                    <div className="mt-3 pt-3 border-t border-slate-800/70 grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-slate-500 text-[11px] block">Diagnosis Terakhir:</span>
-                        <span className="font-medium text-slate-300 truncate block">
-                          {patSession.diagnosis.physioDiagnosis}
-                        </span>
-                        <span className="text-[10px] font-mono text-teal-400">
-                          ICD-10: {patSession.diagnosis.icd10Code}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-slate-500 text-[11px] block">Kemajuan Terapi:</span>
-                        <span className="text-xs font-mono font-bold text-white">
-                          Sesi {patSession.sessionNumber} dari {patSession.totalSessionsTarget}
-                        </span>
-                        <div className="text-[11px] text-amber-400">
-                          VAS Gerak: <strong>{patSession.pain.vasMotion}/10</strong>
+                          <div className="flex flex-col items-end gap-1">
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${
+                                pat.insuranceType === "BPJS"
+                                  ? "bg-teal-950/80 border-teal-800 text-teal-300"
+                                  : "bg-cyan-950/80 border-cyan-800 text-cyan-300"
+                              }`}
+                            >
+                              {pat.insuranceType}
+                            </span>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.2 rounded border ${
+                                patStatus === "COMPLETED"
+                                  ? "bg-cyan-950/60 border-cyan-800 text-cyan-300"
+                                  : "bg-emerald-950/60 border-emerald-800 text-emerald-300"
+                              }`}
+                            >
+                              {patStatus === "COMPLETED" ? "Selesai 8 Sesi" : "Aktif Terapi"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Clinical summary preview */}
+                        <div className="mt-3 pt-3 border-t border-slate-800/70 grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 text-[11px] block">Diagnosis Terakhir:</span>
+                            <span className="font-medium text-slate-300 truncate block">
+                              {patSession.diagnosis.physioDiagnosis}
+                            </span>
+                            <span className="text-[10px] font-mono text-teal-400">
+                              ICD-10: {patSession.diagnosis.icd10Code}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-500 text-[11px] block">Kemajuan Terapi:</span>
+                            <span className="text-xs font-mono font-bold text-white">
+                              Sesi {patSession.sessionNumber} dari {patSession.totalSessionsTarget}
+                            </span>
+                            <div className="text-[11px] text-amber-400">
+                              VAS Gerak: <strong>{patSession.pain.vasMotion}/10</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action buttons inside card */}
+                        <div className="mt-3 pt-2 flex items-center justify-end gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPatientId(pat.id);
+                              setShowBillingModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-amber-300 bg-amber-950/60 border border-amber-800/80 hover:bg-amber-900 px-2 py-1 rounded transition-colors"
+                          >
+                            <Receipt className="w-3 h-3" /> Kasir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPatientId(pat.id);
+                              setShowFhirModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-teal-400 bg-teal-950/60 border border-teal-800/80 hover:bg-teal-900 px-2 py-1 rounded transition-colors"
+                          >
+                            <ShieldCheck className="w-3 h-3" /> SatuSehat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPatientId(pat.id);
+                              setShowPrintModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-slate-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded transition-colors"
+                          >
+                            <Printer className="w-3 h-3" /> Resume
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedPatientId(pat.id);
+                              setActiveTab("soap");
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] text-white bg-teal-600 hover:bg-teal-500 px-2.5 py-1 rounded font-medium transition-colors"
+                          >
+                            SOAP <ChevronRight className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Action buttons inside card */}
-                    <div className="mt-3 pt-2 flex items-center justify-end gap-1.5 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPatientId(pat.id);
-                          setShowBillingModal(true);
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] text-amber-300 bg-amber-950/60 border border-amber-800/80 hover:bg-amber-900 px-2 py-1 rounded transition-colors"
-                      >
-                        <Receipt className="w-3 h-3" /> Kasir
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPatientId(pat.id);
-                          setShowFhirModal(true);
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] text-teal-400 bg-teal-950/60 border border-teal-800/80 hover:bg-teal-900 px-2 py-1 rounded transition-colors"
-                      >
-                        <ShieldCheck className="w-3 h-3" /> SatuSehat
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPatientId(pat.id);
-                          setShowPrintModal(true);
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] text-slate-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded transition-colors"
-                      >
-                        <Printer className="w-3 h-3" /> Resume
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPatientId(pat.id);
-                          setActiveTab("soap");
-                        }}
-                        className="inline-flex items-center gap-1 text-[11px] text-white bg-teal-600 hover:bg-teal-500 px-2.5 py-1 rounded font-medium transition-colors"
-                      >
-                        SOAP <ChevronRight className="w-3 h-3" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -614,6 +902,44 @@ export default function FisiomedicDashboard() {
                 >
                   <Printer className="w-3.5 h-3.5" /> Cetak SOAP
                 </button>
+              </div>
+            </div>
+
+            {/* Clinical SOAP Fast-Templates Bar */}
+            <div className="bg-gradient-to-r from-teal-950/70 via-slate-900 to-slate-900 border border-teal-600/40 rounded-xl p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">Template Asesmen Klinis Cepat (Fast-SOAP)</span>
+                    <span className="text-[10px] font-mono text-teal-300 bg-teal-950 px-1.5 py-0.5 rounded border border-teal-800">
+                      Standar IFI & ICD-10
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Pilih template untuk auto-populate: keluhan, ROM goniometri default, skala nyeri VAS, diagnosa ICD-10, modalitas ICD-9-CM, &amp; home exercise
+                  </p>
+                </div>
+              </div>
+
+              <div className="w-full md:w-auto flex items-center gap-2">
+                <select
+                  value={selectedTemplateId}
+                  onChange={(e) => {
+                    setSelectedTemplateId(e.target.value);
+                    if (e.target.value) handleApplyTemplate(e.target.value);
+                  }}
+                  className="w-full md:w-80 bg-slate-950 border border-teal-700/80 rounded-lg px-3 py-2 text-xs text-teal-300 font-medium focus:outline-none focus:border-teal-400 shadow-inner"
+                >
+                  <option value="">-- Terapkan Template Klinis Cepat --</option>
+                  {SOAP_FAST_TEMPLATES.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1027,6 +1353,37 @@ export default function FisiomedicDashboard() {
                 {sessionFormError}
               </div>
             )}
+
+            {/* Fast-Template Selector inside New Session Modal */}
+            <div className="mb-3 p-2.5 rounded-lg bg-teal-950/40 border border-teal-800/60 text-xs">
+              <label className="text-[11px] font-semibold text-teal-300 block mb-1 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+                Template SOAP Cepat (Opsional):
+              </label>
+              <select
+                onChange={(e) => {
+                  const tpl = SOAP_FAST_TEMPLATES.find((t) => t.id === e.target.value);
+                  if (tpl) {
+                    setNewSessionForm({
+                      ...newSessionForm,
+                      vasRest: tpl.pain.vasRest,
+                      vasMotion: tpl.pain.vasMotion,
+                      vasPressure: tpl.pain.vasPressure,
+                      sessionNotes: `Kasus ${tpl.name}. ${tpl.homeProgram}`,
+                    });
+                  }
+                }}
+                className="w-full bg-slate-950 border border-teal-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+              >
+                <option value="">-- Pilih Template Klinis Cepat --</option>
+                {SOAP_FAST_TEMPLATES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <form onSubmit={handleCreateSession} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-2">
                 <div>

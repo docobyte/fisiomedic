@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { CLINICAL_REFERENCES, INITIAL_PATIENTS, INITIAL_SESSIONS } from "../data/mockPhysioData";
+import { SOAP_FAST_TEMPLATES } from "../data/soapTemplates";
 import {
   patientSchema,
   newPatientInputSchema,
@@ -7,6 +8,7 @@ import {
   goniometryRomSchema,
   clinicalDiagnosisSchema,
   therapySessionSchema,
+  databaseBackupSchema,
   ICD10_REGEX,
   NIK_REGEX,
 } from "../schemas/soapValidation";
@@ -220,6 +222,119 @@ describe("FISIOMEDIC Zod Runtime Validation Tests", () => {
         const res = therapySessionSchema.safeParse(session);
         expect(res.success).toBe(true);
       });
+    });
+  });
+
+  describe("Clinical SOAP Fast-Templates", () => {
+    it("should contain all 4 clinical fast templates", () => {
+      expect(SOAP_FAST_TEMPLATES.length).toBe(4);
+
+      const templateIds = SOAP_FAST_TEMPLATES.map((t) => t.id);
+      expect(templateIds).toContain("tpl-frozen-shoulder");
+      expect(templateIds).toContain("tpl-lbp-hnp");
+      expect(templateIds).toContain("tpl-stroke-hemiparesis");
+      expect(templateIds).toContain("tpl-knee-oa");
+    });
+
+    it("should map to correct ICD-10 diagnosis codes", () => {
+      const fs = SOAP_FAST_TEMPLATES.find((t) => t.id === "tpl-frozen-shoulder");
+      const lbp = SOAP_FAST_TEMPLATES.find((t) => t.id === "tpl-lbp-hnp");
+      const stroke = SOAP_FAST_TEMPLATES.find((t) => t.id === "tpl-stroke-hemiparesis");
+      const knee = SOAP_FAST_TEMPLATES.find((t) => t.id === "tpl-knee-oa");
+
+      expect(fs?.icd10Code).toBe("M75.0");
+      expect(lbp?.icd10Code).toBe("M54.5");
+      expect(stroke?.icd10Code).toBe("G81.9");
+      expect(knee?.icd10Code).toBe("M17.0");
+
+      SOAP_FAST_TEMPLATES.forEach((tpl) => {
+        expect(ICD10_REGEX.test(tpl.icd10Code)).toBe(true);
+      });
+    });
+
+    it("should validate goniometry integrity in all templates (active <= passive)", () => {
+      SOAP_FAST_TEMPLATES.forEach((tpl) => {
+        expect(tpl.goniometry.length).toBeGreaterThan(0);
+        tpl.goniometry.forEach((rom) => {
+          expect(rom.activeDegrees).toBeLessThanOrEqual(rom.passiveDegrees);
+          expect(rom.passiveDegrees).toBeLessThanOrEqual(rom.normalDegrees);
+          const validation = goniometryRomSchema.safeParse(rom);
+          expect(validation.success).toBe(true);
+        });
+      });
+    });
+
+    it("should have complete intervention plans and pain profiles in all templates", () => {
+      SOAP_FAST_TEMPLATES.forEach((tpl) => {
+        expect(tpl.pain.vasMotion).toBeGreaterThanOrEqual(0);
+        expect(tpl.pain.vasMotion).toBeLessThanOrEqual(10);
+        expect(tpl.modalities.length).toBeGreaterThan(0);
+        expect(tpl.exerciseTherapy.length).toBeGreaterThan(0);
+        expect(tpl.homeProgram.length).toBeGreaterThan(10);
+        expect(tpl.ergonomicAdvice.length).toBeGreaterThan(10);
+        expect(tpl.icd9Procedures.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe("Database Backup & Restore Zod Validation", () => {
+    it("should validate a well-formed database backup export", () => {
+      const validBackup = {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        app: "FISIOMEDIC" as const,
+        patients: INITIAL_PATIENTS,
+        sessions: INITIAL_SESSIONS,
+      };
+
+      const result = databaseBackupSchema.safeParse(validBackup);
+      expect(result.success).toBe(true);
+    });
+
+    it("should reject backup with missing patients or sessions", () => {
+      const emptyBackup = {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        app: "FISIOMEDIC" as const,
+        patients: [],
+        sessions: [],
+      };
+
+      const result = databaseBackupSchema.safeParse(emptyBackup);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some((i) => i.message.includes("Minimal 1 data pasien"))).toBe(true);
+      }
+    });
+
+    it("should reject corrupted patient data inside backup", () => {
+      const corruptedBackup = {
+        version: "1.0",
+        exportedAt: new Date().toISOString(),
+        app: "FISIOMEDIC" as const,
+        patients: [
+          {
+            ...INITIAL_PATIENTS[0],
+            nik: "INVALID_NIK_SHORT", // Invalid NIK
+          },
+        ],
+        sessions: INITIAL_SESSIONS,
+      };
+
+      const result = databaseBackupSchema.safeParse(corruptedBackup);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe("Patient Therapy Status Classification", () => {
+    it("should correctly classify patients as ACTIVE (<8 sessions) or COMPLETED (>=8 sessions)", () => {
+      const getStatus = (sessionNumber: number) => (sessionNumber >= 8 ? "COMPLETED" : "ACTIVE");
+
+      expect(getStatus(1)).toBe("ACTIVE");
+      expect(getStatus(4)).toBe("ACTIVE");
+      expect(getStatus(7)).toBe("ACTIVE");
+      expect(getStatus(8)).toBe("COMPLETED");
+      expect(getStatus(9)).toBe("COMPLETED");
     });
   });
 });
